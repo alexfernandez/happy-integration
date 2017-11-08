@@ -6,6 +6,8 @@ const aws = require('aws-sdk');
 const ssh2 = require('ssh2');
 const childProcess = require('child_process');
 
+aws.config.loadFromPath('./.aws.json');
+
 function start() {
   const server = http.createServer((request, response) => {
     console.log('happy');
@@ -14,10 +16,10 @@ function start() {
         console.error('Failed: %s', error);
         return response.end('Crappy because ' + error);
       }
-      response.end('Happy at ' + request.url + ': ' + out);
+      response.write('Happy at ' + request.url + ': ' + out);
       getInstances((error, instances) => {
         if (error) {
-          return console.error('No instances');
+          return console.error('No instances: %s', error);
         }
         deploy(instances, (error, out) => {
           if (error) {
@@ -33,16 +35,24 @@ function start() {
 }
 
 function getInstances(callback) {
+  /*
+  return callback(null, [{
+    PublicIpAddress: '54.154.66.144'},
+    {PublicIpAddress: '54.154.100.15'},
+  ]);
+  */
   var ec2 = new aws.EC2();
   ec2.describeInstances({}, (error, data) => {
     if (error) return callback(error);
     const instances = [];
     data.Reservations.forEach(reservation => {
       reservation.Instances.forEach(instance => {
-        if (instance.Tags[0].Value != 'integration') return;
+        console.log('instance %s: %s', instance.Tags[0].Value, instance.Tags[0].Value.indexOf('happyprod'));
+        if (instance.Tags[0].Value.indexOf('happyprod') == -1) return;
         instances.push(instance);
       });
     });
+    console.log('instances %j', instances);
     return callback(null, instances);
   });
 }
@@ -52,7 +62,7 @@ function deploy(instances, callback) {
     const client = new ssh2.Client();
     client.on('ready', () => {
       const buffers = [];
-      client.exec('cd ~/test/ && git pull', (error, stream) => {
+      client.exec('cd ~/projects/happy/ && git pull', (error, stream) => {
         if (error) return callback(error);
         stream.on('close', () => {
           client.end();
